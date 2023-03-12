@@ -44,6 +44,10 @@ impl Cpu {
         self.interconnect.load32(addr)
     }
 
+    pub fn store32(&mut self, addr: u32, value: u32) -> Result<u32, String> {
+        self.interconnect.store32(addr, value)
+    }
+
     pub fn run_single_cycle(&mut self) {
         let instr = self
             .load32(self.pc)
@@ -58,6 +62,7 @@ impl Cpu {
             match opcode {
                 Opcode::LoadUpperImmediate => self.op_lui(instr),
                 Opcode::OrImmediate => self.op_ori(instr),
+                Opcode::StoreWord => self.op_sw(instr),
             }
         } else {
             panic!(
@@ -79,23 +84,32 @@ impl Cpu {
     }
 
     // Load Upper Immediate
-    // Set imm as upper 16 bits of target register
+    // rt = immediate << 16
     fn op_lui(&mut self, instr: Instruction) {
-        let t = instr.target_register();
-        let i = instr.immediate_value();
-
-        self.set_register(t, i << 16);
+        let rt = instr.gpr_rt();
+        let imm = instr.immediate();
+        self.set_register(rt, imm << 16);
     }
 
     // Or Immediate
-    // Set target register to logical OR of target register and imm
+    // rt = rs | immediate
     fn op_ori(&mut self, instr: Instruction) {
-        let t = instr.target_register();
-        let i = instr.immediate_value();
+        let rt = instr.gpr_rt();
+        let imm = instr.immediate();
+        let res = self.get_register(rt) | imm;
+        self.set_register(rt, res);
+    }
 
-        let res = self.get_register(t) | i;
+    // Store Word
+    // memory[base+offset] = rt
+    fn op_sw(&mut self, instr: Instruction) {
+        let rt = instr.gpr_rt();
+        let base = instr.base();
+        let offset = instr.offset();
 
-        self.set_register(t, res);
+        let addr = self.get_register(base).wrapping_add(offset);
+        let val = self.get_register(rt);
+        self.store32(addr, val).unwrap();
     }
 }
 
@@ -133,6 +147,10 @@ impl Interconnect {
     }
 
     pub fn load32(&self, addr: u32) -> Result<u32, String> {
+        // Word addresses must be aligned by 4
+        if addr % 4 != 0 {
+            return Err(format!("Addr {addr} is not aligned").to_string());
+        }
         if addr >= BIOS_METADATA.starting_addr || addr < BIOS_METADATA.last_addr {
             // The addr relative to BIOS' starting address
             let offset = addr - BIOS_METADATA.starting_addr;
@@ -140,6 +158,14 @@ impl Interconnect {
         }
 
         Err(format!("Addr {addr} not in range for any peripheral").to_string())
+    }
+
+    pub fn store32(&mut self, addr: u32, value: u32) -> Result<u32, String> {
+        // Word addresses must be aligned by 4
+        if addr % 4 != 0 {
+            return Err(format!("Addr {addr} is not aligned").to_string());
+        }
+        todo!("Interconnect::store32!!! addr: {addr:#x}, value: {value:#x}");
     }
 }
 
@@ -152,12 +178,29 @@ impl Instruction {
         Opcode::from_u32(op)
     }
 
-    fn target_register(&self) -> u32 {
+    fn gpr_rs(&self) -> u32 {
+        // 25..21 (5b)
+        0b0001_1111 & (self.0 >> 21)
+    }
+
+    // Alias; same as above
+    fn base(&self) -> u32 {
+        // 25..21 (5b)
+        0b0001_1111 & (self.0 >> 21)
+    }
+
+    fn gpr_rt(&self) -> u32 {
         // 20..16 (5b)
         0b0001_1111 & (self.0 >> 16)
     }
 
-    fn immediate_value(&self) -> u32 {
+    fn immediate(&self) -> u32 {
+        // 15..0 (16b)
+        0xFFFF & self.0
+    }
+
+    // Alias; same as above
+    fn offset(&self) -> u32 {
         // 15..0 (16b)
         0xFFFF & self.0
     }
@@ -168,4 +211,5 @@ impl Instruction {
 enum Opcode {
     LoadUpperImmediate = 0b0000_1111,
     OrImmediate = 0b0000_1101,
+    StoreWord = 0b0010_1011,
 }
