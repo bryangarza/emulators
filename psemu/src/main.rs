@@ -69,6 +69,7 @@ impl Cpu {
                 Opcode::LoadUpperImmediate => self.op_lui(instr),
                 Opcode::OrImmediate => self.op_ori(instr),
                 Opcode::StoreWord => self.op_sw(instr),
+                Opcode::AddImmediateUnsignedWord => self.op_addiu(instr),
             }
         } else {
             panic!(
@@ -104,7 +105,7 @@ impl Cpu {
         self.registers[0] = 0;
     }
 
-    // Load Upper Immediate
+    /// Load Upper Immediate
     // rt = immediate << 16
     fn op_lui(&mut self, instr: Instruction) {
         let rt = instr.gpr_rt();
@@ -112,8 +113,8 @@ impl Cpu {
         self.set_register(rt, imm << 16);
     }
 
-    // Or Immediate
-    // rt = rs | immediate
+    /// Or Immediate
+    /// rt = rs | immediate
     fn op_ori(&mut self, instr: Instruction) {
         let rt = instr.gpr_rt();
         let imm = instr.immediate();
@@ -121,8 +122,8 @@ impl Cpu {
         self.set_register(rt, res);
     }
 
-    // Store Word
-    // memory[base+offset] = rt
+    /// Store Word
+    /// memory[base+offset] = rt
     fn op_sw(&mut self, instr: Instruction) {
         let rt = instr.gpr_rt();
         let base = instr.base();
@@ -133,8 +134,8 @@ impl Cpu {
         self.store32(addr, val).unwrap();
     }
 
-    // Shift Left Logical
-    // rd = rt << sa
+    /// Shift Left Logical
+    /// rd = rt << sa
     fn op_sll(&mut self, instr: Instruction) {
         let rt = instr.gpr_rt();
         let rd = instr.gpr_rd();
@@ -143,6 +144,26 @@ impl Cpu {
         let val = self.get_register(rt) << sa;
 
         self.set_register(rd, val);
+    }
+
+    /// Add Immediate Unsigned Word
+    /// rt = rs + immediate
+    ///
+    /// Note: Here is what the MIPS reference says:
+    ///
+    /// The term “unsigned” in the instruction name is a misnomer; this
+    /// operation is 32-bit modulo arithmetic that does not trap on overflow.
+    /// This instruction is appropriate for unsigned arithmetic, such as
+    /// address arithmetic, or integer arithmetic environments that ignore
+    /// overflow, such as C language arithmetic.
+    fn op_addiu(&mut self, instr: Instruction) {
+        // TODO: Add debug logs that print this and all instructions in MIPS asm syntax
+        let rt = instr.gpr_rt();
+        let rs = instr.gpr_rs();
+        let imm = instr.immediate__sign_extended();
+
+        let val = self.get_register(rs).wrapping_add(imm);
+        self.set_register(rt, val);
     }
 }
 
@@ -295,9 +316,11 @@ impl Instruction {
 #[repr(u32)]
 enum Opcode {
     Special = 0,
+    // TODO check if these two need `Word` suffix
     LoadUpperImmediate = 0b0000_1111,
     OrImmediate = 0b0000_1101,
     StoreWord = 0b0010_1011,
+    AddImmediateUnsignedWord = 0b0000_1001,
 }
 
 #[derive(FromPrimitive, ToPrimitive)]
