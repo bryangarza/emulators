@@ -4,16 +4,21 @@ extern crate num_derive;
 use num_traits::{FromPrimitive, ToPrimitive};
 
 const PROGRAM_COUNTER_RESET_VALUE: u32 = 0xbfc00000;
-const BIOS_METADATA: Range = Range {
+const BIOS_ADDR_RANGE: AddressRange = AddressRange {
     starting_addr: 0xbfc00000,
     last_addr: 0xbfc00000 + (512 * 1024),
-    size: 512 * 1024,
+    // size: 512 * 1024,
 };
 
-pub struct Range {
+const MEM_CONTROL_ADDR_RANGE: AddressRange = AddressRange {
+    starting_addr: 0x1f801000,
+    last_addr: 0x1f801004 + 32,
+};
+
+pub struct AddressRange {
     starting_addr: u32,
     last_addr: u32,
-    size: u32,
+    // size: u32,
 }
 
 fn main() {
@@ -44,8 +49,8 @@ impl Cpu {
         self.interconnect.load32(addr)
     }
 
-    pub fn store32(&mut self, addr: u32, value: u32) -> Result<u32, String> {
-        self.interconnect.store32(addr, value)
+    pub fn store32(&mut self, addr: u32, val: u32) -> Result<(), String> {
+        self.interconnect.store32(addr, val)
     }
 
     pub fn run_single_cycle(&mut self) {
@@ -77,8 +82,8 @@ impl Cpu {
         self.registers[register_index as usize]
     }
 
-    pub fn set_register(&mut self, register_index: u32, value: u32) {
-        self.registers[register_index as usize] = value;
+    pub fn set_register(&mut self, reg_idx: u32, val: u32) {
+        self.registers[reg_idx as usize] = val;
         // Never overwrite $zero
         self.registers[0] = 0;
     }
@@ -105,7 +110,7 @@ impl Cpu {
     fn op_sw(&mut self, instr: Instruction) {
         let rt = instr.gpr_rt();
         let base = instr.base();
-        let offset = instr.offset();
+        let offset = instr.offset__sign_extended();
 
         let addr = self.get_register(base).wrapping_add(offset);
         let val = self.get_register(rt);
@@ -124,7 +129,7 @@ impl Bios {
         Bios { data }
     }
 
-    // little endian (LSB goes first, i.e., the left side)
+    // Little endian (LSB goes first, i.e., the left side)
     pub fn load32(&self, offset: u32) -> u32 {
         let offset = offset as usize;
 
@@ -151,21 +156,43 @@ impl Interconnect {
         if addr % 4 != 0 {
             return Err(format!("Addr {addr} is not aligned").to_string());
         }
-        if addr >= BIOS_METADATA.starting_addr || addr < BIOS_METADATA.last_addr {
+        if addr >= BIOS_ADDR_RANGE.starting_addr || addr < BIOS_ADDR_RANGE.last_addr {
             // The addr relative to BIOS' starting address
-            let offset = addr - BIOS_METADATA.starting_addr;
+            let offset = addr - BIOS_ADDR_RANGE.starting_addr;
             return Ok(self.bios.load32(offset));
         }
 
         Err(format!("Addr {addr} not in range for any peripheral").to_string())
     }
 
-    pub fn store32(&mut self, addr: u32, value: u32) -> Result<u32, String> {
+    pub fn store32(&mut self, addr: u32, val: u32) -> Result<(), String> {
         // Word addresses must be aligned by 4
         if addr % 4 != 0 {
             return Err(format!("Addr {addr} is not aligned").to_string());
         }
-        todo!("Interconnect::store32!!! addr: {addr:#x}, value: {value:#x}");
+        if addr >= MEM_CONTROL_ADDR_RANGE.starting_addr || addr < MEM_CONTROL_ADDR_RANGE.last_addr {
+            // The addr relative to BIOS' starting address
+            let offset = addr - MEM_CONTROL_ADDR_RANGE.starting_addr;
+
+            // These registers contain the base address of the expansion 1 and 2 register
+            // maps, respectively. Should never be changed from these hardcoded values.
+            if offset == 0 && val != 0x1f000000 {
+                return Err(
+                    format!("Attempted to set bad expansion 1 base address {addr:#x}").to_string(),
+                );
+            }
+
+            if offset == 4 && val != 0x1f802000 {
+                return Err(
+                    format!("Attempted to set bad expansion 2 base address {addr:#x}").to_string(),
+                );
+            }
+
+            println!("Unhandled write to MEM_CONTROL register, offset: {offset}");
+            return Ok(());
+        } else {
+            todo!("Interconnect::store32!!! addr: {addr:#x}, value: {val:#x}");
+        }
     }
 }
 
@@ -203,6 +230,18 @@ impl Instruction {
     fn offset(&self) -> u32 {
         // 15..0 (16b)
         0xFFFF & self.0
+    }
+
+    // Force the compiler to sign-extend val
+    fn immediate__sign_extended(&self) -> u32 {
+        let val = self.immediate() as i16;
+        val as u32
+    }
+
+    // Force the compiler to sign-extend val
+    fn offset__sign_extended(&self) -> u32 {
+        let val = self.immediate() as i16;
+        val as u32
     }
 }
 
