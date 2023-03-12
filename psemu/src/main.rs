@@ -63,8 +63,9 @@ impl Cpu {
 
     pub fn execute_instr(&mut self, instr_: u32) {
         let instr = Instruction(instr_);
-        if let Some(opcode) = instr.opcode() {
-            match opcode {
+        if let Some(op) = instr.sop() {
+            match op {
+                Opcode::Special => self.execute_special_op_instr(instr_),
                 Opcode::LoadUpperImmediate => self.op_lui(instr),
                 Opcode::OrImmediate => self.op_ori(instr),
                 Opcode::StoreWord => self.op_sw(instr),
@@ -72,6 +73,21 @@ impl Cpu {
         } else {
             panic!(
                 "If I could, I'd handle this instruction: {instr_:#x} {instr_:#b}
+            registers = {:#x?}",
+                self.registers
+            );
+        }
+    }
+
+    pub fn execute_special_op_instr(&mut self, instr_: u32) {
+        let instr = Instruction(instr_);
+        if let Some(sop) = instr.secondary_opcode() {
+            match sop {
+                SecondaryOpcode::ShiftLeftLogical => self.op_sll(instr),
+            }
+        } else {
+            panic!(
+                "If I could, I'd handle this secondary-op instruction: {instr_:#x} {instr_:#b}
             registers = {:#x?}",
                 self.registers
             );
@@ -115,6 +131,18 @@ impl Cpu {
         let addr = self.get_register(base).wrapping_add(offset);
         let val = self.get_register(rt);
         self.store32(addr, val).unwrap();
+    }
+
+    // Shift Left Logical
+    // rd = rt << sa
+    fn op_sll(&mut self, instr: Instruction) {
+        let rt = instr.gpr_rt();
+        let rd = instr.gpr_rd();
+        let sa = instr.sa();
+
+        let val = self.get_register(rt) << sa;
+
+        self.set_register(rd, val);
     }
 }
 
@@ -199,10 +227,17 @@ impl Interconnect {
 struct Instruction(u32);
 
 impl Instruction {
-    fn opcode(&self) -> Option<Opcode> {
+    fn sop(&self) -> Option<Opcode> {
         // 31..26 (6b)
         let op = self.0 >> 26;
         Opcode::from_u32(op)
+    }
+
+    // Used when primary sop == Opcode::Special
+    fn secondary_opcode(&self) -> Option<SecondaryOpcode> {
+        // 5..0 (6b)
+        let sop = 0b0011_1111 & self.0;
+        SecondaryOpcode::from_u32(sop)
     }
 
     fn gpr_rs(&self) -> u32 {
@@ -219,6 +254,11 @@ impl Instruction {
     fn gpr_rt(&self) -> u32 {
         // 20..16 (5b)
         0b0001_1111 & (self.0 >> 16)
+    }
+
+    fn gpr_rd(&self) -> u32 {
+        // 15..11 (5b)
+        0b0001_1111 & (self.0 >> 11)
     }
 
     fn immediate(&self) -> u32 {
@@ -243,12 +283,25 @@ impl Instruction {
         let val = self.immediate() as i16;
         val as u32
     }
+
+    // I think sa stands for 'shift amount', maybe...
+    fn sa(&self) -> u32 {
+        // 10..6 (5b)
+        0b0001_1111 & (self.0 >> 6)
+    }
 }
 
 #[derive(FromPrimitive, ToPrimitive)]
 #[repr(u32)]
 enum Opcode {
+    Special = 0,
     LoadUpperImmediate = 0b0000_1111,
     OrImmediate = 0b0000_1101,
     StoreWord = 0b0010_1011,
+}
+
+#[derive(FromPrimitive, ToPrimitive)]
+#[repr(u32)]
+enum SecondaryOpcode {
+    ShiftLeftLogical = 0,
 }
