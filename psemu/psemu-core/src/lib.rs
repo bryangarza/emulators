@@ -22,16 +22,7 @@ pub struct AddressRange {
     // size: u32,
 }
 
-#[instrument]
-fn main() {
-    tracing_subscriber::fmt::init();
-    let mut cpu = Cpu::new();
-    loop {
-        cpu.run_single_cycle();
-    }
-}
-
-struct Cpu {
+pub struct Cpu {
     pc: u32,
     registers: [u32; 32],
     interconnect: Interconnect,
@@ -331,3 +322,14 @@ enum Opcode {
 enum SecondaryOpcode {
     ShiftLeftLogical = 0,
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+
+//     #[test]
+//     fn it_works() {
+//         let result = add(2, 2);
+//         assert_eq!(result, 4);
+//     }
+// }
