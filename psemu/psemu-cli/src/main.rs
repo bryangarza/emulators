@@ -18,8 +18,8 @@ struct Args {
 #[instrument]
 fn main() {
     let args = Args::parse();
-    tracing_subscriber::fmt::init();
     if !args.debug_mode {
+        tracing_subscriber::fmt::init();
         let mut cpu = Cpu::new();
         loop {
             cpu.run_single_cycle();
