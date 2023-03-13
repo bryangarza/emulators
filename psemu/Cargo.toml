@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "psemu-cli",
     "psemu-core",
     "psemudb"
 ]

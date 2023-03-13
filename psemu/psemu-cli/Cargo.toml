@@ -1,0 +1,16 @@
+[package]
+name = "psemu-cli"
+version = "0.1.0"
+authors = ["Bryan Garza <1396101+bryangarza@users.noreply.github.com>"]
+edition = "2021"
+description = "PSX emulator with integrated debugger"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tracing-subscriber = "0.3"
+tracing = "0.1.36"
+psemu-core = { path = "../psemu-core" }
+psemudb = { path = "../psemudb" }
+
+clap = { version = "4.1.8", features = ["derive"] }

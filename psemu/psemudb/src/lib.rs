@@ -1,31 +1,36 @@
-use tracing::instrument;
-use std::{io, thread, time::Duration};
-use tui::{
-    backend::CrosstermBackend,
-    widgets::{Widget, Block, Borders, Table, Row, Cell},
-    layout::{Layout, Constraint, Direction},
-    Terminal, style::{Style, Color, Modifier}, text::{Spans, Span}
-};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use std::{io, thread, time::Duration};
+use tracing::instrument;
+use tui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Span, Spans},
+    widgets::{Block, Borders, Cell, Row, Table, Widget},
+    Terminal,
+};
 
 use psemu_core::Cpu;
 
-// #[instrument]
-// fn main() {
-//     tracing_subscriber::fmt::init();
-//     let mut cpu = Cpu::new();
-//     loop {
-//         cpu.run_single_cycle();
-//     }
+pub struct Debugger {
+    cpu: Cpu,
+}
 
-    
-// }
+impl Debugger {
+    pub fn new() -> Self {
+        Debugger { cpu: Cpu::new() }
+    }
 
-fn main() -> Result<(), io::Error> {
+    pub fn run(&mut self) {
+        start();
+    }
+}
+
+pub fn start() -> Result<(), io::Error> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -44,7 +49,7 @@ fn main() -> Result<(), io::Error> {
             Cell::from("Row32").style(Style::default().fg(Color::Yellow)),
             Cell::from(Spans::from(vec![
                 Span::raw("Row"),
-                Span::styled("33", Style::default().fg(Color::Green))
+                Span::styled("33", Style::default().fg(Color::Green)),
             ])),
         ]),
         // If a Row need to display some content over multiple lines, you just have to change
@@ -53,7 +58,8 @@ fn main() -> Result<(), io::Error> {
             Cell::from("Row\n41"),
             Cell::from("Row\n42"),
             Cell::from("Row\n43"),
-        ]).height(2),
+        ])
+        .height(2),
     ])
     // You can set the style of the entire Table.
     .style(Style::default().fg(Color::White))
@@ -63,14 +69,16 @@ fn main() -> Result<(), io::Error> {
             .style(Style::default().fg(Color::Yellow))
             // If you want some space between the header and the rest of the rows, you can always
             // specify some margin at the bottom.
-            .bottom_margin(1)
+            .bottom_margin(1),
     )
     // As any other widget, a Table can be wrapped in a Block.
-    .block(Block::default()
-        .title("psemu")
-        .borders(Borders::ALL))
+    .block(Block::default().title("psemu").borders(Borders::ALL))
     // Columns widths are constrained in the same way as Layout...
-    .widths(&[Constraint::Length(5), Constraint::Length(5), Constraint::Length(10)])
+    .widths(&[
+        Constraint::Length(5),
+        Constraint::Length(5),
+        Constraint::Length(10),
+    ])
     // ...and they can be separated by a fixed spacing.
     .column_spacing(1)
     // If you wish to highlight a row in any specific way when it is selected...
