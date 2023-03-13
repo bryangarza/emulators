@@ -3,7 +3,11 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::{io, thread, time::Duration};
+use std::{
+    io::{self, Stdout},
+    thread,
+    time::Duration,
+};
 use tracing::instrument;
 use tui::{
     backend::CrosstermBackend,
@@ -14,7 +18,7 @@ use tui::{
     Terminal,
 };
 
-use psemu_core::Cpu;
+use psemu_core::{Cpu, REGISTER_NAMES};
 
 pub struct Debugger {
     cpu: Cpu,
@@ -26,74 +30,79 @@ impl Debugger {
     }
 
     pub fn run(&mut self) {
-        start();
+        let mut term = setup_terminal().unwrap();
+        self.display(&mut term);
+        thread::sleep(Duration::from_millis(5000));
+        self.cpu.run_single_cycle();
+        self.display(&mut term);
+        thread::sleep(Duration::from_millis(5000));
+        restore_terminal(&mut term);
+    }
+
+    pub fn display(
+        &self,
+        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    ) -> Result<(), io::Error> {
+        let mut rows = Vec::new();
+        for (i, reg) in self.cpu.get_registers().iter().enumerate() {
+            rows.push(Row::new(vec![
+                format!("{i}"),
+                REGISTER_NAMES[i].to_string(),
+                format!("{reg:#x}").to_string(),
+            ]));
+        }
+
+        let table = Table::new(rows)
+            // You can set the style of the entire Table.
+            .style(Style::default().fg(Color::White))
+            // It has an optional header, which is simply a Row always visible at the top.
+            .header(
+                Row::new(vec!["#", "Name", "Value"])
+                    .style(Style::default().fg(Color::Yellow))
+                    // If you want some space between the header and the rest of the rows, you can always
+                    // specify some margin at the bottom.
+                    .bottom_margin(1),
+            )
+            // As any other widget, a Table can be wrapped in a Block.
+            .block(
+                Block::default()
+                    .title("psemudb - registers")
+                    .borders(Borders::ALL),
+            )
+            // Columns widths are constrained in the same way as Layout...
+            .widths(&[
+                Constraint::Length(2),
+                Constraint::Length(5),
+                Constraint::Length(18),
+            ])
+            // ...and they can be separated by a fixed spacing.
+            .column_spacing(1)
+            // If you wish to highlight a row in any specific way when it is selected...
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+            // ...and potentially show a symbol in front of the selection.
+            .highlight_symbol(">>");
+
+        terminal.draw(|f| {
+            let size = f.size();
+            f.render_widget(table, size);
+        })?;
+
+        Ok(())
     }
 }
 
-pub fn start() -> Result<(), io::Error> {
-    // setup terminal
+pub fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>, io::Error> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let terminal = Terminal::new(backend)?;
+    Ok(terminal)
+}
 
-    let table = Table::new(vec![
-        // Row can be created from simple strings.
-        Row::new(vec!["Row11", "Row12", "Row13"]),
-        // You can style the entire row.
-        Row::new(vec!["Row21", "Row22", "Row23"]).style(Style::default().fg(Color::Blue)),
-        // If you need more control over the styling you may need to create Cells directly
-        Row::new(vec![
-            Cell::from("Row31"),
-            Cell::from("Row32").style(Style::default().fg(Color::Yellow)),
-            Cell::from(Spans::from(vec![
-                Span::raw("Row"),
-                Span::styled("33", Style::default().fg(Color::Green)),
-            ])),
-        ]),
-        // If a Row need to display some content over multiple lines, you just have to change
-        // its height.
-        Row::new(vec![
-            Cell::from("Row\n41"),
-            Cell::from("Row\n42"),
-            Cell::from("Row\n43"),
-        ])
-        .height(2),
-    ])
-    // You can set the style of the entire Table.
-    .style(Style::default().fg(Color::White))
-    // It has an optional header, which is simply a Row always visible at the top.
-    .header(
-        Row::new(vec!["Col1", "Col2", "Col3"])
-            .style(Style::default().fg(Color::Yellow))
-            // If you want some space between the header and the rest of the rows, you can always
-            // specify some margin at the bottom.
-            .bottom_margin(1),
-    )
-    // As any other widget, a Table can be wrapped in a Block.
-    .block(Block::default().title("psemu").borders(Borders::ALL))
-    // Columns widths are constrained in the same way as Layout...
-    .widths(&[
-        Constraint::Length(5),
-        Constraint::Length(5),
-        Constraint::Length(10),
-    ])
-    // ...and they can be separated by a fixed spacing.
-    .column_spacing(1)
-    // If you wish to highlight a row in any specific way when it is selected...
-    .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-    // ...and potentially show a symbol in front of the selection.
-    .highlight_symbol(">>");
-
-    terminal.draw(|f| {
-        let size = f.size();
-        f.render_widget(table, size);
-    })?;
-
-    thread::sleep(Duration::from_millis(5000));
-
-    // restore terminal
+pub fn restore_terminal(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+) -> Result<(), io::Error> {
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),

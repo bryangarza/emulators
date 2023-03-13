@@ -16,6 +16,12 @@ const MEM_CONTROL_ADDR_RANGE: AddressRange = AddressRange {
     last_addr: 0x1f801004 + 32,
 };
 
+pub const REGISTER_NAMES: [&'static str; 32] = [
+    "$zero", "$at", "$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3", "$t4",
+    "$t5", "$t6", "$t7", "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$t8", "$t9",
+    "$k0", "$k1", "$gp", "$sp", "$fp", "$ra",
+];
+
 pub struct AddressRange {
     starting_addr: u32,
     last_addr: u32,
@@ -91,6 +97,10 @@ impl Cpu {
 
     pub fn get_register(&self, register_index: u32) -> u32 {
         self.registers[register_index as usize]
+    }
+
+    pub fn get_registers(&self) -> &[u32] {
+        &self.registers
     }
 
     pub fn set_register(&mut self, reg_idx: u32, val: u32) {
