@@ -2,6 +2,7 @@
 extern crate num_derive;
 
 use num_traits::{FromPrimitive, ToPrimitive};
+use tracing::{instrument, warn};
 
 const PROGRAM_COUNTER_RESET_VALUE: u32 = 0xbfc00000;
 const BIOS_ADDR_RANGE: AddressRange = AddressRange {
@@ -21,7 +22,9 @@ pub struct AddressRange {
     // size: u32,
 }
 
+#[instrument]
 fn main() {
+    tracing_subscriber::fmt::init();
     let mut cpu = Cpu::new();
     loop {
         cpu.run_single_cycle();
@@ -157,7 +160,6 @@ impl Cpu {
     /// address arithmetic, or integer arithmetic environments that ignore
     /// overflow, such as C language arithmetic.
     fn op_addiu(&mut self, instr: Instruction) {
-        // TODO: Add debug logs that print this and all instructions in MIPS asm syntax
         let rt = instr.gpr_rt();
         let rs = instr.gpr_rs();
         let imm = instr.immediate__sign_extended();
@@ -200,6 +202,7 @@ impl Interconnect {
         Interconnect { bios: Bios::new() }
     }
 
+    #[instrument(skip(self, addr), fields(addr=%format!("{addr:#x}")))]
     pub fn load32(&self, addr: u32) -> Result<u32, String> {
         // Word addresses must be aligned by 4
         if addr % 4 != 0 {
@@ -214,6 +217,7 @@ impl Interconnect {
         Err(format!("Addr {addr} not in range for any peripheral").to_string())
     }
 
+    #[instrument(skip(self, addr, val), fields(addr=%format!("{addr:#x}"), val=%format!("{val:#x}")))]
     pub fn store32(&mut self, addr: u32, val: u32) -> Result<(), String> {
         // Word addresses must be aligned by 4
         if addr % 4 != 0 {
@@ -237,7 +241,7 @@ impl Interconnect {
                 );
             }
 
-            println!("Unhandled write to MEM_CONTROL register, offset: {offset}");
+            warn!(offset, "Unhandled write to MEM_CONTROL register");
             return Ok(());
         } else {
             todo!("Interconnect::store32!!! addr: {addr:#x}, value: {val:#x}");
@@ -316,7 +320,6 @@ impl Instruction {
 #[repr(u32)]
 enum Opcode {
     Special = 0,
-    // TODO check if these two need `Word` suffix
     LoadUpperImmediate = 0b0000_1111,
     OrImmediate = 0b0000_1101,
     StoreWord = 0b0010_1011,
