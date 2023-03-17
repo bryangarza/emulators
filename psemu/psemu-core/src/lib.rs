@@ -28,10 +28,21 @@ pub struct AddressRange {
     // size: u32,
 }
 
+pub struct HumanReadableInstruction(pub String);
+pub struct HumanReadableEvalInstruction(pub String);
+
+pub struct InstructionForDebugger {
+    pub raw: u32,
+    pub op: String,
+    pub human: HumanReadableInstruction,
+    pub eval: HumanReadableEvalInstruction,
+}
+
 pub struct Cpu {
     pc: u32,
     registers: [u32; 32],
     interconnect: Interconnect,
+    pub instruction_history: Vec<InstructionForDebugger>,
 }
 
 impl Cpu {
@@ -42,6 +53,7 @@ impl Cpu {
             pc: PROGRAM_COUNTER_RESET_VALUE,
             registers,
             interconnect: Interconnect::new(),
+            instruction_history: vec![],
         }
     }
 
@@ -64,13 +76,19 @@ impl Cpu {
     pub fn execute_instr(&mut self, instr_: u32) {
         let instr = Instruction(instr_);
         if let Some(op) = instr.sop() {
-            match op {
-                Opcode::Special => self.execute_special_op_instr(instr_),
-                Opcode::LoadUpperImmediate => self.op_lui(instr),
-                Opcode::OrImmediate => self.op_ori(instr),
-                Opcode::StoreWord => self.op_sw(instr),
-                Opcode::AddImmediateUnsignedWord => self.op_addiu(instr),
-            }
+            let (op_s, (h, e)) = match op {
+                Opcode::Special => ("SLL".to_string(), self.execute_special_op_instr(instr_)),
+                Opcode::LoadUpperImmediate => ("LUI".to_string(), self.op_lui(instr)),
+                Opcode::OrImmediate => ("ORI".to_string(), self.op_ori(instr)),
+                Opcode::StoreWord => ("SW".to_string(), self.op_sw(instr)),
+                Opcode::AddImmediateUnsignedWord => ("ADDIU".to_string(), self.op_addiu(instr)),
+            };
+            self.instruction_history.push(InstructionForDebugger {
+                raw: instr_,
+                op: op_s,
+                human: h,
+                eval: e,
+            });
         } else {
             panic!(
                 "If I could, I'd handle this instruction: {instr_:#x} {instr_:#b}
@@ -80,7 +98,10 @@ impl Cpu {
         }
     }
 
-    pub fn execute_special_op_instr(&mut self, instr_: u32) {
+    pub fn execute_special_op_instr(
+        &mut self,
+        instr_: u32,
+    ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
         let instr = Instruction(instr_);
         if let Some(sop) = instr.secondary_opcode() {
             match sop {
@@ -110,25 +131,48 @@ impl Cpu {
     }
 
     /// Load Upper Immediate
-    // rt = immediate << 16
-    fn op_lui(&mut self, instr: Instruction) {
+    // rt = imm << 16
+    fn op_lui(
+        &mut self,
+        instr: Instruction,
+    ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
+        // TODO: newtypes
         let rt = instr.gpr_rt();
         let imm = instr.immediate();
-        self.set_register(rt, imm << 16);
+        let val = imm << 16;
+        self.set_register(rt, val);
+        let h = HumanReadableInstruction("rt = imm << 16".to_string());
+        let e =
+            HumanReadableEvalInstruction(format!("rt = ({imm:#x} << 16) => {val:#x}").to_string());
+        (h, e)
     }
 
     /// Or Immediate
-    /// rt = rs | immediate
-    fn op_ori(&mut self, instr: Instruction) {
+    /// rt = get(rs) | imm
+    fn op_ori(
+        &mut self,
+        instr: Instruction,
+    ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
         let rt = instr.gpr_rt();
+        let rs = instr.gpr_rs();
         let imm = instr.immediate();
-        let res = self.get_register(rt) | imm;
-        self.set_register(rt, res);
+        let get_rs = self.get_register(rs);
+        let val = get_rs | imm;
+        self.set_register(rt, val);
+        let h = HumanReadableInstruction("rt = get(rs) | immediate".to_string());
+        let e = HumanReadableEvalInstruction(
+            format!("rt = (get({rs}) | {imm:#x}) => ({get_rs:#x} | {imm:#x}) => {val:#x}")
+                .to_string(),
+        );
+        (h, e)
     }
 
     /// Store Word
-    /// memory[base+offset] = rt
-    fn op_sw(&mut self, instr: Instruction) {
+    /// memory[base+offset] = get(rt)
+    fn op_sw(
+        &mut self,
+        instr: Instruction,
+    ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
         let rt = instr.gpr_rt();
         let base = instr.base();
         let offset = instr.offset__sign_extended();
@@ -136,11 +180,19 @@ impl Cpu {
         let addr = self.get_register(base).wrapping_add(offset);
         let val = self.get_register(rt);
         self.store32(addr, val).unwrap();
+        let h = HumanReadableInstruction("memory[base+offset] = get(rt)".to_string());
+        let e = HumanReadableEvalInstruction(
+            format!("memory[{base:#x}+{offset:#x}] = {val:#x}").to_string(),
+        );
+        (h, e)
     }
 
     /// Shift Left Logical
-    /// rd = rt << sa
-    fn op_sll(&mut self, instr: Instruction) {
+    /// rd = get(rt) << sa
+    fn op_sll(
+        &mut self,
+        instr: Instruction,
+    ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
         let rt = instr.gpr_rt();
         let rd = instr.gpr_rd();
         let sa = instr.sa();
@@ -148,10 +200,13 @@ impl Cpu {
         let val = self.get_register(rt) << sa;
 
         self.set_register(rd, val);
+        let h = HumanReadableInstruction("rd = get(rt) << sa".to_string());
+        let e = HumanReadableEvalInstruction(format!("rd = {val:#x} << {sa}").to_string());
+        (h, e)
     }
 
     /// Add Immediate Unsigned Word
-    /// rt = rs + immediate
+    /// rt = get(rs) + imme
     ///
     /// Note: Here is what the MIPS reference says:
     ///
@@ -160,13 +215,22 @@ impl Cpu {
     /// This instruction is appropriate for unsigned arithmetic, such as
     /// address arithmetic, or integer arithmetic environments that ignore
     /// overflow, such as C language arithmetic.
-    fn op_addiu(&mut self, instr: Instruction) {
+    fn op_addiu(
+        &mut self,
+        instr: Instruction,
+    ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
         let rt = instr.gpr_rt();
         let rs = instr.gpr_rs();
         let imm = instr.immediate__sign_extended();
 
-        let val = self.get_register(rs).wrapping_add(imm);
+        let get_rs = self.get_register(rs);
+        let val = get_rs.wrapping_add(imm);
         self.set_register(rt, val);
+        let h = HumanReadableInstruction("rt = get(rs) + imm".to_string());
+        let e = HumanReadableEvalInstruction(
+            format!("rt = (get({rs}) + {imm:#x}) => ({get_rs:#x} + {imm:#x})").to_string(),
+        );
+        (h, e)
     }
 }
 
