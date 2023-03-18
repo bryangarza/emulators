@@ -1,14 +1,12 @@
 use std::{
     io::Write,
     sync::{
-        mpsc::{self, Receiver, Sender},
+        mpsc::{self, Sender},
         Arc, Mutex,
     },
 };
 
 use clap::Parser;
-use tracing::instrument::{self, WithSubscriber};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use psemu_core::Cpu;
 use psemudb::Debugger;
@@ -64,7 +62,6 @@ impl Write for ChannelLogger {
     }
 }
 
-// #[instrument]
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
@@ -81,11 +78,7 @@ async fn main() {
             .with_writer(Mutex::new(chan_logger))
             .finish();
         let _default = tracing::subscriber::set_default(subscriber);
-        // tracing_subscriber::fmt::init().with_subscriber(subscriber);
 
-        // tracing_subscriber::registry()
-        //   .with(tui_logger::tracing_subscriber_layer())
-        //   .init();
         let mut debugger = Debugger::new(logs);
         debugger.run();
     }

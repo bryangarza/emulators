@@ -9,15 +9,13 @@ use crossterm::{
 use std::{
     io::{self, Stdout},
     sync::{Arc, Mutex},
-    thread::{self},
-    time::Duration,
 };
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Cell, Row, Table, Tabs, Widget},
+    widgets::{Block, Borders, Row, Table, Tabs},
     Terminal,
 };
 

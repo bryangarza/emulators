@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate num_derive;
 
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::FromPrimitive;
 use tracing::{instrument, warn};
 
 const PROGRAM_COUNTER_RESET_VALUE: u32 = 0xbfc00000;
