@@ -1,7 +1,10 @@
 #[macro_use]
 extern crate num_derive;
 
+use std::io;
+
 use num_traits::FromPrimitive;
+use thiserror::Error;
 use tracing::{error, info, instrument, warn};
 
 const PROGRAM_COUNTER_RESET_VALUE: u32 = 0xbfc00000;
@@ -25,6 +28,23 @@ pub const REGISTER_NAMES: [&str; 32] = [
     "$t5", "$t6", "$t7", "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$t8", "$t9",
     "$k0", "$k1", "$gp", "$sp", "$fp", "$ra",
 ];
+
+#[derive(Error, Debug)]
+pub enum PsemuCoreError {
+    // #[error("data store disconnected")]
+    // Disconnect(#[from] io::Error),
+    #[error("Unknown instruction {0:#010x}")]
+    UnknownInstruction(u32),
+    #[error("Unknown secondary-op instruction {0:#010x}")]
+    UnknownSecondaryOpInstruction(u32),
+    // #[error("invalid header (expected {expected:?}, found {found:?})")]
+    // InvalidHeader {
+    //     expected: String,
+    //     found: String,
+    // },
+    // #[error("unknown data store error")]
+    // Unknown,
+}
 
 pub struct AddressRange {
     starting_addr: u32,
@@ -75,16 +95,16 @@ impl Cpu {
         self.interconnect.store32(addr, val)
     }
 
-    pub fn run_single_cycle(&mut self) {
+    pub fn run_single_cycle(&mut self) -> Result<(), PsemuCoreError> {
         let instr = self
             .load32(self.pc)
             .expect("Unable to load next instruction");
         self.pc = self.pc.wrapping_add(4);
-        self.execute_instr(instr);
+        self.execute_instr(instr)
     }
 
-    #[instrument(skip(self, instr_), fields(instr_=%format!("{instr_:#x}")))]
-    pub fn execute_instr(&mut self, instr_: u32) {
+    #[instrument(skip(self, instr_), fields(instr=%format!("{instr_:#x}")))]
+    pub fn execute_instr(&mut self, instr_: u32) -> Result<(), PsemuCoreError> {
         let instr = Instruction(instr_);
         if let Some(op) = instr.sop() {
             let (op_s, (h, e)) = match op {
@@ -92,8 +112,8 @@ impl Cpu {
                     if let Some(res) = self.execute_special_op_instr(instr_) {
                         ("SLL".to_string(), res)
                     } else {
-                        error!("unknown secondary-op instruction");
-                        return;
+                        error!("Unknown secondary-op instruction");
+                        return Err(PsemuCoreError::UnknownSecondaryOpInstruction(instr_));
                     }
                 }
                 Opcode::LoadUpperImmediate => ("LUI".to_string(), self.op_lui(instr)),
@@ -108,8 +128,10 @@ impl Cpu {
                 eval: e,
             });
         } else {
-            error!("unknown instruction");
+            error!("Unknown instruction");
+            return Err(PsemuCoreError::UnknownInstruction(instr_));
         }
+        Ok(())
     }
 
     pub fn execute_special_op_instr(

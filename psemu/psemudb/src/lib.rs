@@ -10,6 +10,7 @@ use std::{
     io::{self, Stdout},
     sync::{Arc, Mutex},
 };
+use tracing::error;
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -42,10 +43,11 @@ pub struct Debugger {
     cpu: Cpu,
     prev_registers: [u32; 32],
     logs: Arc<Mutex<Vec<String>>>,
+    auto: bool,
 }
 
 impl Debugger {
-    pub fn new(logs: Arc<Mutex<Vec<String>>>) -> Self {
+    pub fn new(logs: Arc<Mutex<Vec<String>>>, auto: bool) -> Self {
         let cpu = Cpu::new();
         let prev_registers: [u32; 32] = cpu.get_registers().try_into().unwrap();
 
@@ -53,6 +55,7 @@ impl Debugger {
             cpu,
             prev_registers,
             logs,
+            auto,
         }
     }
 
@@ -62,20 +65,52 @@ impl Debugger {
         self.display(&mut term).unwrap();
         // thread::sleep(Duration::from_millis(5000));
 
-        loop {
-            let event = listen_to_events();
-            if let Ok(KeyEvent { code, kind, .. }) = event {
-                if code == KeyCode::Char('q') && kind == KeyEventKind::Press {
-                    restore_terminal(&mut term).unwrap();
+        if self.auto {
+            loop {
+                let tmp: [u32; 32] = self.cpu.get_registers().try_into().unwrap();
+                let res = self.cpu.run_single_cycle();
+                self.prev_registers = tmp;
+                self.display(&mut term).unwrap();
+                if res.is_err() {
                     break;
-                } else if code == KeyCode::Char('n') && kind == KeyEventKind::Press {
-                    let tmp: [u32; 32] = self.cpu.get_registers().try_into().unwrap();
-                    self.cpu.run_single_cycle();
-                    self.prev_registers = tmp;
-                    self.display(&mut term).unwrap();
+                }
+            }
+        } else {
+            loop {
+                match listen_to_events() {
+                    TermEvent::Quit => {
+                        restore_terminal(&mut term).unwrap();
+                        break;
+                    }
+                    TermEvent::Next => {
+                        let tmp: [u32; 32] = self.cpu.get_registers().try_into().unwrap();
+                        let res = self.cpu.run_single_cycle();
+                        self.prev_registers = tmp;
+                        self.display(&mut term).unwrap();
+                        if res.is_err() {
+                            break;
+                        }
+                    }
+                    TermEvent::Resize => {
+                        self.display(&mut term).unwrap();
+                    }
                 }
             }
         }
+
+        loop {
+            match listen_to_events() {
+                TermEvent::Quit => {
+                    restore_terminal(&mut term).unwrap();
+                    break;
+                }
+                TermEvent::Resize => {
+                    self.display(&mut term).unwrap();
+                }
+                _ => (),
+            }
+        }
+
         std::process::exit(0);
     }
 
@@ -292,10 +327,27 @@ pub fn restore_terminal(
     Ok(())
 }
 
-fn listen_to_events() -> crossterm::Result<KeyEvent> {
+enum TermEvent {
+    Quit,
+    Next,
+    Resize,
+}
+
+fn listen_to_events() -> TermEvent {
     loop {
-        if let Event::Key(event) = event::read()? {
-            return Ok(event);
+        match event::read() {
+            Ok(Event::Key(KeyEvent { code, kind, .. })) => {
+                if code == KeyCode::Char('q') && kind == KeyEventKind::Press {
+                    return TermEvent::Quit;
+                } else if code == KeyCode::Char('n') && kind == KeyEventKind::Press {
+                    return TermEvent::Next;
+                }
+            }
+            Ok(Event::Resize(..)) => return TermEvent::Resize,
+            _ => (),
+            Err(e) => {
+                error!(?e, "Error reading event")
+            }
         }
     }
 }

@@ -17,6 +17,9 @@ struct Args {
     /// Start in TUI debug mode
     #[arg(long)]
     debug_mode: bool,
+    /// Step through instructions automatically
+    #[arg(long, default_value_t = true)]
+    auto: bool,
     //    /// Number of times to greet
     //    #[arg(short, long, default_value_t = 1)]
     //    count: u8,
@@ -75,11 +78,12 @@ async fn main() {
         let logs = Arc::new(Mutex::new(vec![]));
         let chan_logger = ChannelLogger::new(logs.clone());
         let subscriber = tracing_subscriber::fmt()
+            .without_time()
             .with_writer(Mutex::new(chan_logger))
             .finish();
         let _default = tracing::subscriber::set_default(subscriber);
 
-        let mut debugger = Debugger::new(logs);
+        let mut debugger = Debugger::new(logs, args.auto);
         debugger.run();
     }
 }
