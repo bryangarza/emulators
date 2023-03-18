@@ -25,18 +25,26 @@ struct Args {
 }
 
 struct ChannelLogger {
-    tx: Sender<String>,
+    tx: &'static mut Sender<String>,
 }
 
 impl ChannelLogger {
     pub fn new(logs: Arc<Mutex<Vec<String>>>) -> Self {
         let (tx, rx) = mpsc::channel();
+        // TODO: See if there's a better way to prevent `tx` from getting dropped
+        let tx = Box::leak(Box::new(tx));
         let logs_clone = logs.clone();
         tokio::spawn(async move {
             loop {
-                let msg = rx.recv().unwrap();
-                if let Ok(mut logs) = logs_clone.lock() {
-                    logs.push(msg)
+                match rx.recv() {
+                    Ok(msg) => {
+                        if let Ok(mut logs) = logs_clone.lock() {
+                            logs.push(msg)
+                        }
+                    }
+                    Err(e) => {
+                        println!("Could not receive: {e}")
+                    }
                 }
             }
         });

@@ -78,6 +78,7 @@ impl Debugger {
                 }
             }
         }
+        std::process::exit(0);
     }
 
     fn get_registers_table(&self) -> Table {
@@ -162,6 +163,7 @@ impl Debugger {
             .highlight_symbol(">>")
     }
 
+    // TODO: Extract this + ChannelLogger into separate crate and publish on crates.io
     fn get_logs_table(&self) -> Table {
         let mut rows = Vec::new();
         if let Ok(logs) = &self.logs.lock() {
