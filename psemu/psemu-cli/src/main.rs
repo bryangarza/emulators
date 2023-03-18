@@ -31,7 +31,7 @@ impl ChannelLogger {
         let (tx, rx) = mpsc::channel();
         // TODO: See if there's a better way to prevent `tx` from getting dropped
         let tx = Box::leak(Box::new(tx));
-        let logs_clone = logs.clone();
+        let logs_clone = logs;
         tokio::spawn(async move {
             loop {
                 match rx.recv() {

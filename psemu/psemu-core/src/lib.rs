@@ -16,7 +16,7 @@ const MEM_CONTROL_ADDR_RANGE: AddressRange = AddressRange {
     last_addr: 0x1f801004 + 32,
 };
 
-pub const REGISTER_NAMES: [&'static str; 32] = [
+pub const REGISTER_NAMES: [&str; 32] = [
     "$zero", "$at", "$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3", "$t4",
     "$t5", "$t6", "$t7", "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$t8", "$t9",
     "$k0", "$k1", "$gp", "$sp", "$fp", "$ra",
@@ -43,6 +43,12 @@ pub struct Cpu {
     registers: [u32; 32],
     interconnect: Interconnect,
     pub instruction_history: Vec<InstructionForDebugger>,
+}
+
+impl Default for Cpu {
+    fn default() -> Self {
+        Cpu::new()
+    }
 }
 
 impl Cpu {
@@ -142,8 +148,7 @@ impl Cpu {
         let val = imm << 16;
         self.set_register(rt, val);
         let h = HumanReadableInstruction("rt = imm << 16".to_string());
-        let e =
-            HumanReadableEvalInstruction(format!("rt = ({imm:#x} << 16) => {val:#x}").to_string());
+        let e = HumanReadableEvalInstruction(format!("rt = ({imm:#x} << 16) => {val:#x}"));
         (h, e)
     }
 
@@ -160,10 +165,9 @@ impl Cpu {
         let val = get_rs | imm;
         self.set_register(rt, val);
         let h = HumanReadableInstruction("rt = get(rs) | immediate".to_string());
-        let e = HumanReadableEvalInstruction(
-            format!("rt = (get({rs}) | {imm:#x}) => ({get_rs:#x} | {imm:#x}) => {val:#x}")
-                .to_string(),
-        );
+        let e = HumanReadableEvalInstruction(format!(
+            "rt = (get({rs}) | {imm:#x}) => ({get_rs:#x} | {imm:#x}) => {val:#x}"
+        ));
         (h, e)
     }
 
@@ -176,14 +180,14 @@ impl Cpu {
         let rt = instr.gpr_rt();
         let base = instr.base();
         let get_base = self.get_register(base);
-        let offset = instr.offset__sign_extended();
+        let offset = instr.offset_sign_extended();
 
         let addr = get_base.wrapping_add(offset);
         let val = self.get_register(rt);
         self.store32(addr, val).unwrap();
         let h = HumanReadableInstruction("memory[get(base)+offset] = get(rt)".to_string());
         let e = HumanReadableEvalInstruction(
-            format!("memory[(get({base:#x})+{offset:#x}) => ({get_base:#x}+{offset:#x}) => {addr:#x}] = {val:#x}").to_string(),
+            format!("memory[(get({base:#x})+{offset:#x}) => ({get_base:#x}+{offset:#x}) => {addr:#x}] = {val:#x}"),
         );
         (h, e)
     }
@@ -202,7 +206,7 @@ impl Cpu {
 
         self.set_register(rd, val);
         let h = HumanReadableInstruction("rd = get(rt) << sa".to_string());
-        let e = HumanReadableEvalInstruction(format!("rd = {val:#x} << {sa}").to_string());
+        let e = HumanReadableEvalInstruction(format!("rd = {val:#x} << {sa}"));
         (h, e)
     }
 
@@ -222,15 +226,15 @@ impl Cpu {
     ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
         let rt = instr.gpr_rt();
         let rs = instr.gpr_rs();
-        let imm = instr.immediate__sign_extended();
+        let imm = instr.immediate_sign_extended();
 
         let get_rs = self.get_register(rs);
         let val = get_rs.wrapping_add(imm);
         self.set_register(rt, val);
         let h = HumanReadableInstruction("rt = get(rs) + imm".to_string());
-        let e = HumanReadableEvalInstruction(
-            format!("rt = (get({rs}) + {imm:#x}) => ({get_rs:#x} + {imm:#x})").to_string(),
-        );
+        let e = HumanReadableEvalInstruction(format!(
+            "rt = (get({rs}) + {imm:#x}) => ({get_rs:#x} + {imm:#x})"
+        ));
         (h, e)
     }
 }
@@ -272,7 +276,7 @@ impl Interconnect {
     pub fn load32(&self, addr: u32) -> Result<u32, String> {
         // Word addresses must be aligned by 4
         if addr % 4 != 0 {
-            return Err(format!("Addr {addr} is not aligned").to_string());
+            return Err(format!("Addr {addr} is not aligned"));
         }
         if addr >= BIOS_ADDR_RANGE.starting_addr || addr < BIOS_ADDR_RANGE.last_addr {
             // The addr relative to BIOS' starting address
@@ -280,14 +284,14 @@ impl Interconnect {
             return Ok(self.bios.load32(offset));
         }
 
-        Err(format!("Addr {addr} not in range for any peripheral").to_string())
+        Err(format!("Addr {addr} not in range for any peripheral"))
     }
 
     #[instrument(skip(self, addr, val), fields(addr=%format!("{addr:#x}"), val=%format!("{val:#x}")))]
     pub fn store32(&mut self, addr: u32, val: u32) -> Result<(), String> {
         // Word addresses must be aligned by 4
         if addr % 4 != 0 {
-            return Err(format!("Addr {addr} is not aligned").to_string());
+            return Err(format!("Addr {addr} is not aligned"));
         }
         if addr >= MEM_CONTROL_ADDR_RANGE.starting_addr || addr < MEM_CONTROL_ADDR_RANGE.last_addr {
             // The addr relative to BIOS' starting address
@@ -296,19 +300,19 @@ impl Interconnect {
             // These registers contain the base address of the expansion 1 and 2 register
             // maps, respectively. Should never be changed from these hardcoded values.
             if offset == 0 && val != 0x1f000000 {
-                return Err(
-                    format!("Attempted to set bad expansion 1 base address {addr:#x}").to_string(),
-                );
+                return Err(format!(
+                    "Attempted to set bad expansion 1 base address {addr:#x}"
+                ));
             }
 
             if offset == 4 && val != 0x1f802000 {
-                return Err(
-                    format!("Attempted to set bad expansion 2 base address {addr:#x}").to_string(),
-                );
+                return Err(format!(
+                    "Attempted to set bad expansion 2 base address {addr:#x}"
+                ));
             }
 
             warn!(offset, "Unhandled write to MEM_CONTROL register");
-            return Ok(());
+            Ok(())
         } else {
             todo!("Interconnect::store32!!! addr: {addr:#x}, value: {val:#x}");
         }
@@ -364,13 +368,13 @@ impl Instruction {
     }
 
     // Force the compiler to sign-extend val
-    fn immediate__sign_extended(&self) -> u32 {
+    fn immediate_sign_extended(&self) -> u32 {
         let val = self.immediate() as i16;
         val as u32
     }
 
     // Force the compiler to sign-extend val
-    fn offset__sign_extended(&self) -> u32 {
+    fn offset_sign_extended(&self) -> u32 {
         let val = self.immediate() as i16;
         val as u32
     }

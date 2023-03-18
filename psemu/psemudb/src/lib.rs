@@ -59,20 +59,20 @@ impl Debugger {
     pub fn run(&mut self) {
         let mut term = setup_terminal().unwrap();
 
-        self.display(&mut term);
+        self.display(&mut term).unwrap();
         // thread::sleep(Duration::from_millis(5000));
 
         loop {
             let event = listen_to_events();
             if let Ok(KeyEvent { code, kind, .. }) = event {
                 if code == KeyCode::Char('q') && kind == KeyEventKind::Press {
-                    restore_terminal(&mut term);
+                    restore_terminal(&mut term).unwrap();
                     break;
                 } else if code == KeyCode::Char('n') && kind == KeyEventKind::Press {
                     let tmp: [u32; 32] = self.cpu.get_registers().try_into().unwrap();
                     self.cpu.run_single_cycle();
                     self.prev_registers = tmp;
-                    self.display(&mut term);
+                    self.display(&mut term).unwrap();
                 }
             }
         }
@@ -207,7 +207,7 @@ impl Debugger {
         let logs_table = self.get_logs_table();
 
         let menu_titles = vec!["Home", "Next Instruction", "Quit"];
-        let mut active_menu_item = MenuItem::Home;
+        let active_menu_item = MenuItem::Home;
 
         terminal.draw(|f| {
             let size = f.size();
@@ -294,19 +294,8 @@ pub fn restore_terminal(
 
 fn listen_to_events() -> crossterm::Result<KeyEvent> {
     loop {
-        // `read()` blocks until an `Event` is available
-        match event::read()? {
-            // Event::FocusGained => println!("FocusGained"),
-            // Event::FocusLost => println!("FocusLost"),
-            Event::Key(event) => {
-                // println!("{:?}", event);
-                return Ok(event);
-            }
-            // Event::Mouse(event) => println!("{:?}", event),
-            // #[cfg(feature = "bracketed-paste")]
-            // Event::Paste(data) => println!("{:?}", data),
-            // Event::Resize(width, height) => println!("New size {}x{}", width, height),
-            _ => (),
+        if let Event::Key(event) = event::read()? {
+            return Ok(event);
         }
     }
 }
