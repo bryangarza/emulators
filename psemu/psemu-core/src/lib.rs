@@ -168,21 +168,22 @@ impl Cpu {
     }
 
     /// Store Word
-    /// memory[base+offset] = get(rt)
+    /// memory[get(base)+offset] = get(rt)
     fn op_sw(
         &mut self,
         instr: Instruction,
     ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
         let rt = instr.gpr_rt();
         let base = instr.base();
+        let get_base = self.get_register(base);
         let offset = instr.offset__sign_extended();
 
-        let addr = self.get_register(base).wrapping_add(offset);
+        let addr = get_base.wrapping_add(offset);
         let val = self.get_register(rt);
         self.store32(addr, val).unwrap();
-        let h = HumanReadableInstruction("memory[base+offset] = get(rt)".to_string());
+        let h = HumanReadableInstruction("memory[get(base)+offset] = get(rt)".to_string());
         let e = HumanReadableEvalInstruction(
-            format!("memory[{base:#x}+{offset:#x}] = {val:#x}").to_string(),
+            format!("memory[(get({base:#x})+{offset:#x}) => ({get_base:#x}+{offset:#x}) => {addr:#x}] = {val:#x}").to_string(),
         );
         (h, e)
     }

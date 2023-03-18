@@ -14,3 +14,4 @@ psemu-core = { path = "../psemu-core" }
 psemudb = { path = "../psemudb" }
 
 clap = { version = "4.1.8", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
