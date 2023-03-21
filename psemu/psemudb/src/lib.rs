@@ -253,7 +253,7 @@ impl Debugger {
                     [
                         Constraint::Length(3),
                         Constraint::Min(2),
-                        // Constraint::Length(3),
+                        Constraint::Length(8),
                     ]
                     .as_ref(),
                 )
@@ -287,17 +287,20 @@ impl Debugger {
                 // .margin(1)
                 .constraints([Constraint::Percentage(15), Constraint::Percentage(85)].as_ref())
                 .split(outer_view_chunks[1]);
-            f.render_widget(registers_table, main_view_chunks[0]);
 
-            let right_subview_chunks = Layout::default()
-                .direction(Direction::Vertical)
-                // .margin(1)
-                .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
-                .split(main_view_chunks[1]);
-            f.render_widget(asm_instructions_table, right_subview_chunks[0]);
-            f.render_widget(logs_table, right_subview_chunks[1]);
+            // let right_subview_chunks = Layout::default()
+            //     .direction(Direction::Vertical)
+            //     // .margin(1)
+            //     .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
+            //     .split(main_view_chunks[1]);
+            // f.render_widget(asm_instructions_table, right_subview_chunks[0]);
 
             f.render_widget(tabs, outer_view_chunks[0]);
+
+            f.render_widget(registers_table, main_view_chunks[0]);
+            f.render_widget(asm_instructions_table, main_view_chunks[1]);
+
+            f.render_widget(logs_table, outer_view_chunks[2]);
         })?;
 
         Ok(())
