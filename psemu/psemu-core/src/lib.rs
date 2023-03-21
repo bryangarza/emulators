@@ -63,7 +63,9 @@ pub struct InstructionForDebugger {
 }
 
 pub struct Cpu {
-    pc: u32,
+    pub pc: u32,
+    // Used to simulate branch-delay slot
+    next_instruction: Instruction,
     registers: [u32; 32],
     interconnect: Interconnect,
     pub instruction_history: Vec<InstructionForDebugger>,
@@ -81,6 +83,7 @@ impl Cpu {
         registers[0] = 0;
         Cpu {
             pc: PROGRAM_COUNTER_RESET_VALUE,
+            next_instruction: Instruction(0x00), // NOP
             registers,
             interconnect: Interconnect::new(),
             instruction_history: vec![],
@@ -96,11 +99,12 @@ impl Cpu {
     }
 
     pub fn run_single_cycle(&mut self) -> Result<(), PsemuCoreError> {
-        let instr = self
-            .load32(self.pc)
-            .expect("Unable to load next instruction");
+        let pc = self.pc;
+        let instr = self.next_instruction;
+        self.next_instruction =
+            Instruction(self.load32(pc).expect("Unable to load next instruction"));
         self.pc = self.pc.wrapping_add(4);
-        self.execute_instr(instr)
+        self.execute_instr(instr.0)
     }
 
     #[instrument(skip(self, instr_), fields(instr=%format!("{instr_:#x}")))]
@@ -120,6 +124,7 @@ impl Cpu {
                 Opcode::OrImmediate => ("ORI".to_string(), self.op_ori(instr)),
                 Opcode::StoreWord => ("SW".to_string(), self.op_sw(instr)),
                 Opcode::AddImmediateUnsignedWord => ("ADDIU".to_string(), self.op_addiu(instr)),
+                Opcode::Jump => ("J".to_string(), self.op_jump(instr)),
             };
             self.instruction_history.push(InstructionForDebugger {
                 raw: instr_,
@@ -261,6 +266,22 @@ impl Cpu {
         ));
         (h, e)
     }
+
+    fn op_jump(
+        &mut self,
+        instr: Instruction,
+    ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
+        let instr_index = instr.instr_index();
+        let instr_index = instr_index << 2;
+        let pc_4_msb = 0xF0000000 & self.pc;
+        let res = pc_4_msb | instr_index;
+        self.pc = res;
+        let h = HumanReadableInstruction("pc = 4MSB(pc) | (instr_index << 2)".to_string());
+        let e = HumanReadableEvalInstruction(format!(
+            "pc = 4MSB(pc) | (instr_index << 2) => {pc_4_msb:#x} | {instr_index:#} => {res:#x}"
+        ));
+        (h, e)
+    }
 }
 
 struct Bios {
@@ -348,6 +369,7 @@ impl Interconnect {
     }
 }
 
+#[derive(Clone, Copy)]
 struct Instruction(u32);
 
 impl Instruction {
@@ -413,6 +435,11 @@ impl Instruction {
         // 10..6 (5b)
         0b0001_1111 & (self.0 >> 6)
     }
+
+    fn instr_index(&self) -> u32 {
+        // 25..0 (26b)
+        0x03FFFFFF & self.0
+    }
 }
 
 #[derive(FromPrimitive, ToPrimitive)]
@@ -423,6 +450,7 @@ enum Opcode {
     OrImmediate = 0b0000_1101,
     StoreWord = 0b0010_1011,
     AddImmediateUnsignedWord = 0b0000_1001,
+    Jump = 0b0000_0010,
 }
 
 #[derive(FromPrimitive, ToPrimitive, PartialEq)]

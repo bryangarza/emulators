@@ -10,6 +10,6 @@ tracing-subscriber = "0.3"
 tracing = "0.1.36"
 psemu-core = { path = "../psemu-core" }
 
-tui = "0.19"
+ratatui = "0.20.0"
 crossterm = "0.25"
-ansi-to-tui = "2.0.1"
+ansi-to-tui = { git = " https://github.com/sayanarijit/ansi-to-tui-forked.git", branch = "main"}

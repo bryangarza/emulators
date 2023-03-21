@@ -18,7 +18,7 @@ struct Args {
     #[arg(long)]
     debug_mode: bool,
     /// Step through instructions automatically
-    #[arg(long, default_value_t = true)]
+    #[arg(long, default_value_t = false)]
     auto: bool,
     //    /// Number of times to greet
     //    #[arg(short, long, default_value_t = 1)]
