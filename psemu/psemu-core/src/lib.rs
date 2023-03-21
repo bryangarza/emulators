@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate num_derive;
 
-use std::io;
+use std::{fmt, io};
 
 use num_traits::FromPrimitive;
 use thiserror::Error;
@@ -21,6 +21,10 @@ const MEM_CONTROL_ADDR_RANGE: AddressRange = AddressRange {
 const RAM_SIZE_RANGE: AddressRange = AddressRange {
     starting_addr: 0x1f801060,
     last_addr: 0x1f801060 + 4,
+};
+const CACHE_CONTROL_RANGE: AddressRange = AddressRange {
+    starting_addr: 0xfffe0130,
+    last_addr: 0xfffe0130 + 4,
 };
 
 pub const REGISTER_NAMES: [&str; 32] = [
@@ -114,7 +118,7 @@ impl Cpu {
             let (op_s, (h, e)) = match op {
                 Opcode::Special => {
                     if let Some(res) = self.execute_special_op_instr(instr_) {
-                        ("SLL".to_string(), res)
+                        res
                     } else {
                         error!("Unknown secondary-op instruction");
                         return Err(PsemuCoreError::UnknownSecondaryOpInstruction(instr_));
@@ -142,25 +146,30 @@ impl Cpu {
     pub fn execute_special_op_instr(
         &mut self,
         instr_: u32,
-    ) -> Option<(HumanReadableInstruction, HumanReadableEvalInstruction)> {
+    ) -> Option<(
+        String,
+        (HumanReadableInstruction, HumanReadableEvalInstruction),
+    )> {
         let instr = Instruction(instr_);
-        if instr.secondary_opcode() == Some(SecondaryOpcode::ShiftLeftLogical) {
-            Some(self.op_sll(instr))
-        } else {
-            None
+        match instr.secondary_opcode() {
+            Some(SecondaryOpcode::ShiftLeftLogical) => {
+                Some(("SLL".to_string(), self.op_sll(instr)))
+            }
+            Some(SecondaryOpcode::Or) => Some(("OR".to_string(), self.op_or(instr))),
+            None => None,
         }
     }
 
-    pub fn get_register(&self, register_index: u32) -> u32 {
-        self.registers[register_index as usize]
+    pub fn get_register(&self, register_index: RegisterIndex) -> u32 {
+        self.registers[register_index.0 as usize]
     }
 
     pub fn get_registers(&self) -> &[u32] {
         &self.registers
     }
 
-    pub fn set_register(&mut self, reg_idx: u32, val: u32) {
-        self.registers[reg_idx as usize] = val;
+    pub fn set_register(&mut self, reg_idx: RegisterIndex, val: u32) {
+        self.registers[reg_idx.0 as usize] = val;
         // Never overwrite $zero
         self.registers[0] = 0;
     }
@@ -177,7 +186,27 @@ impl Cpu {
         let val = imm << 16;
         self.set_register(rt, val);
         let h = HumanReadableInstruction("rt = imm << 16".to_string());
-        let e = HumanReadableEvalInstruction(format!("${rt} = ({imm:#x} << 16) => {val:#x}"));
+        let e = HumanReadableEvalInstruction(format!("{rt} = ({imm:#x} << 16) => {val:#x}"));
+        (h, e)
+    }
+
+    // Or
+    // rd = get(rs) | get(rt)
+    fn op_or(
+        &mut self,
+        instr: Instruction,
+    ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
+        let rd = instr.gpr_rd();
+        let rs = instr.gpr_rs();
+        let rt = instr.gpr_rt();
+        let get_rs = self.get_register(rs);
+        let get_rt = self.get_register(rt);
+        let val = get_rs | get_rt;
+        self.set_register(rd, val);
+        let h = HumanReadableInstruction("rd = get(rs) | get(rt)".to_string());
+        let e = HumanReadableEvalInstruction(format!(
+            "{rd} = (get({rs}) | get({rt}) => ({get_rs:#x} | {get_rt:#x}) => {val:#x}"
+        ));
         (h, e)
     }
 
@@ -195,7 +224,7 @@ impl Cpu {
         self.set_register(rt, val);
         let h = HumanReadableInstruction("rt = get(rs) | immediate".to_string());
         let e = HumanReadableEvalInstruction(format!(
-            "${rt} = (get({rs}) | {imm:#x}) => ({get_rs:#x} | {imm:#x}) => {val:#x}"
+            "{rt} = (get({rs}) | {imm:#x}) => ({get_rs:#x} | {imm:#x}) => {val:#x}"
         ));
         (h, e)
     }
@@ -207,8 +236,9 @@ impl Cpu {
         instr: Instruction,
     ) -> (HumanReadableInstruction, HumanReadableEvalInstruction) {
         let rt = instr.gpr_rt();
+        // TODO: Is `base` always a register? If so, change the base() method to return RegisterIndex
         let base = instr.base();
-        let get_base = self.get_register(base);
+        let get_base = self.get_register(RegisterIndex(base));
         let offset = instr.offset_sign_extended();
 
         let addr = get_base.wrapping_add(offset);
@@ -235,7 +265,7 @@ impl Cpu {
 
         self.set_register(rd, val);
         let h = HumanReadableInstruction("rd = get(rt) << sa".to_string());
-        let e = HumanReadableEvalInstruction(format!("${rd} = {val:#x} << {sa}"));
+        let e = HumanReadableEvalInstruction(format!("{rd} = {val:#x} << {sa}"));
         (h, e)
     }
 
@@ -262,7 +292,7 @@ impl Cpu {
         self.set_register(rt, val);
         let h = HumanReadableInstruction("rt = get(rs) + imm".to_string());
         let e = HumanReadableEvalInstruction(format!(
-            "${rt} = (get({rs}) + {imm:#x}) => ({get_rs:#x} + {imm:#x})"
+            "{rt} = (get({rs}) + {imm:#x}) => ({get_rs:#x} + {imm:#x})"
         ));
         (h, e)
     }
@@ -359,9 +389,15 @@ impl Interconnect {
             warn!(offset, "Unhandled write to MEM_CONTROL register");
             Ok(())
         } else if addr >= RAM_SIZE_RANGE.starting_addr && addr < RAM_SIZE_RANGE.last_addr {
-            // The addr relative to RAM_SIZE' starting address
+            // The addr relative to RAM_SIZE's starting address
             let offset = addr - RAM_SIZE_RANGE.starting_addr;
             info!(offset, "Ignoring write to RAM_SIZE register");
+            Ok(())
+        } else if addr >= CACHE_CONTROL_RANGE.starting_addr && addr < CACHE_CONTROL_RANGE.last_addr
+        {
+            // The addr relative to CACHE_CONTROL's starting address
+            let offset = addr - CACHE_CONTROL_RANGE.starting_addr;
+            info!(offset, "Ignoring write to CACHE_CONTROL register");
             Ok(())
         } else {
             todo!("Interconnect::store32!!! addr: {addr:#x}, value: {val:#x}");
@@ -371,6 +407,14 @@ impl Interconnect {
 
 #[derive(Clone, Copy)]
 struct Instruction(u32);
+
+#[derive(Clone, Copy)]
+pub struct RegisterIndex(pub u32);
+impl fmt::Display for RegisterIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "${}", self.0)
+    }
+}
 
 impl Instruction {
     fn sop(&self) -> Option<Opcode> {
@@ -386,9 +430,9 @@ impl Instruction {
         SecondaryOpcode::from_u32(sop)
     }
 
-    fn gpr_rs(&self) -> u32 {
+    fn gpr_rs(&self) -> RegisterIndex {
         // 25..21 (5b)
-        0b0001_1111 & (self.0 >> 21)
+        RegisterIndex(0b0001_1111 & (self.0 >> 21))
     }
 
     // Alias; same as above
@@ -397,14 +441,14 @@ impl Instruction {
         0b0001_1111 & (self.0 >> 21)
     }
 
-    fn gpr_rt(&self) -> u32 {
+    fn gpr_rt(&self) -> RegisterIndex {
         // 20..16 (5b)
-        0b0001_1111 & (self.0 >> 16)
+        RegisterIndex(0b0001_1111 & (self.0 >> 16))
     }
 
-    fn gpr_rd(&self) -> u32 {
+    fn gpr_rd(&self) -> RegisterIndex {
         // 15..11 (5b)
-        0b0001_1111 & (self.0 >> 11)
+        RegisterIndex(0b0001_1111 & (self.0 >> 11))
     }
 
     fn immediate(&self) -> u32 {
@@ -457,6 +501,7 @@ enum Opcode {
 #[repr(u32)]
 enum SecondaryOpcode {
     ShiftLeftLogical = 0,
+    Or = 0b0010_0101,
 }
 
 // #[cfg(test)]
