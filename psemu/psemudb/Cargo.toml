@@ -12,4 +12,4 @@ psemu-core = { path = "../psemu-core" }
 
 ratatui = "0.20.0"
 crossterm = "0.25"
-ansi-to-tui = { git = " https://github.com/sayanarijit/ansi-to-tui-forked.git", branch = "main"}
+ansi-to-tui = "3.0.0"

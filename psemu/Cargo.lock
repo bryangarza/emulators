@@ -5,7 +5,8 @@ version = 3
 [[package]]
 name = "ansi-to-tui"
 version = "3.0.0"
-source = "git+https://github.com/sayanarijit/ansi-to-tui-forked.git?branch=main#9987040265b324015197164981373f9c4f976228"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f3d156989cd98fb225b1a83e82e133e95a151774a420c884f6a65c5f6fb1ee2"
 dependencies = [
  "nom",
  "ratatui",
